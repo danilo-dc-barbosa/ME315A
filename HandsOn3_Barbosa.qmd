@@ -1,0 +1,155 @@
+---
+title: "HandsOn3_Barbosa"
+format: pdf
+editor: source
+---
+
+## Configurando o RStudio
+
+```{r}
+library(DBI)
+library(RSQLite)
+
+link <- dbConnect(SQLite(), "me315.sqlite")
+```
+
+### Hands-On
+
+1.  Exiba os valores de `STATE` e `FEE` da tabela `PRESERVE` mas sem duplicados.
+
+```{sql connection=link}
+SELECT DISTINCT STATE, FEE FROM PRESERVE 
+```
+
+2.  Exiba todos os valores de `DNO` na tabela `EMPLOYEE`. Não exiba valores duplicados.
+
+```{sql connection=link}
+SELECT DISTINCT DNO FROM EMPLOYEE
+```
+
+3.  Execute as QUERYS a seguir. Examine as tabelas resultantes e faça as observações relevantes.
+- `SELECT DNO, SALARY FROM EMPLOYEE`
+- `SELECT DISTINCT DNO, SALARY FROM EMPLOYEE`
+- `SELECT DISTINCT DNO, SALARY FROM EMPLOYEE ORDER BY DNO, SALARY`
+
+```{sql connection=link}
+SELECT DNO, SALARY FROM EMPLOYEE
+```
+
+```{sql connection=link}
+SELECT DISTINCT DNO, SALARY FROM EMPLOYEE
+```
+
+```{sql connection=link}
+SELECT DISTINCT DNO, SALARY FROM EMPLOYEE ORDER BY DNO, SALARY
+```
+
+*Note que o comando `DISTINCT` não foi aplicado nas duas últiimas QUERYS, apesar do `ORDER BY` funcionar normalmente na última. Isso ocorre simplesmente pois a variável `DNO`, referente ao número da reserva, é uma chave que relaciona o funcionário observado com a reserva pela qual o mesmo é responsável.
+
+4.  Exiba todas as informações sobre qualquer reserva natural em Montana que seja menor que 1.000 acres.
+
+```{sql connection=link}
+SELECT * FROM PRESERVE 
+WHERE STATE = "MT" AND ACRES < 1000
+```
+
+5.  Exiba todas as informações sobre qualquer reserva natural cujo valor de `ACRES` esteja entre 1200 e 15000, inclusive.
+
+```{sql connection=link}
+SELECT * FROM PRESERVE
+WHERE ACRES >= 1200 AND ACRES <= 1500
+```
+
+6.  Exiba todas as informações sobre qualquer reserva natural localizada em Montana que não possua taxa de entrada e seja maior que 10.000 acres.
+
+```{sql connection=link}
+SELECT * FROM PRESERVE 
+WHERE STATE = "MT" AND FEE = 0 AND ACRES > 10000
+```
+
+7.  Exiba todas as informações sobre as reservas naturais localizadas em Montana ou Massachusetts.
+
+```{sql connection=link}
+SELECT * FROM PRESERVE 
+WHERE STATE = "MT" OR STATE = "MA"
+```
+
+8.  Exiba todas as informações sobre qualquer reserva natural localizada em Montana ou qualquer reserva que seja menor que 1.000 acres.
+
+```{sql connection=link}
+SELECT * FROM PRESERVE 
+WHERE STATE = "MT" OR ACRES < 1000
+```
+
+9.  Exiba o número e o nome de qualquer reserva natural que possua taxa de entrada que não seja igual a zero.
+
+```{sql connection=link}
+SELECT PNAME, PNO FROM PRESERVE
+WHERE NOT FEE = 0
+```
+
+10. Exiba o número e o nome das reservas naturais que não possuem taxa de entrada de US\$ 3,00 e não possuem taxa de US\$ 10,00.
+
+```{sql connection=link}
+SELECT PNO, PNAME FROM PRESERVE
+WHERE (NOT FEE = 3) AND (NOT FEE = 10)
+```
+
+11. Exiba todas as informações sobre qualquer reserva natural localizada no Arizona que não possua taxa de entrada, ou qualquer reserva que seja menor que 100 acres (independentemente de seus valores de `STATE` e `FEE`).
+
+```{sql connection=link}
+SELECT * FROM PRESERVE 
+WHERE (STATE = "AZ" AND FEE = 0) OR ACRES < 100
+```
+
+12. Exiba todas as informações sobre qualquer reserva natural que seja menor que 1.000 acres e tenha taxa de entrada de zero dólares ou esteja localizada no Arizona.
+
+```{sql connection=link}
+SELECT * FROM PRESERVE
+WHERE (ACRES < 1000 AND FEE = 0) OR STATE = "AZ"
+```
+
+13. Selecione todas as informações sobre qualquer reserva natural com taxa de entrada que não seja maior que zero, ou qualquer outra reserva, independentemente de sua taxa, que esteja localizada em Montana e seja maior que 1.000 acres.
+
+```{sql connection=link}
+SELECT * FROM PRESERVE
+WHERE NOT FEE > 0 OR (STATE = "MT" AND ACRES > 1000)
+```
+
+14. Exiba todas as informações sobre todas as reservas naturais, exceto aquelas reservas de Montana sem taxa de entrada.
+
+```{sql connection=link}
+SELECT * FROM PRESERVE 
+WHERE NOT (STATE = "MT" AND FEE = 0)
+```
+
+15. As seguintes cláusulas WHERE são logicamente equivalentes?
+`WHERE STATE = 'MA' AND (ACRES > 1000 OR FEE = 0.0)`
+`WHERE (STATE = 'MA' AND ACRES > 1000) OR (STATE = 'MA' AND FEE = 0.0)`
+
+R: Sim, pois o `AND` na primeira cláusula atua sobre a condição inteira, funcionando como uma propriedade distributiva.
+
+16. As seguintes cláusulas WHERE são logicamente equivalentes?
+`WHERE STATE = 'MA' OR (ACRES > 1000 AND FEE = 0.0)`
+`WHERE (STATE = 'MA' OR ACRES > 1000) AND (STATE = 'MA' OR FEE = 0.0)`
+
+R: Não, pois a segunda condição quer que o tamanho seja maior que 100 acres assim como a taxa de entrada seja gratuita. Logo, a segunda cláusula passa a interfirir através de `STATE = "MA"` em cada uma das restrições, de modo que a condição original seja separada.
+
+17. As seguintes cláusulas WHERE são logicamente equivalentes?
+`WHERE NOT (ACRES < 50 AND STATE = 'MA')`
+`WHERE NOT ACRES < 50 AND NOT STATE = 'MA'`
+`WHERE ACRES >= 50 OR STATE <> 'MA'`
+
+R: Sim, todas as três cláusulas são formas distintas de escrever a mesma coisa. Na segunda, o operador `NOT` é distribuído entre as duas condições que devem ser uma intercecção, e executado antes de `AND`. Na terceira cláusula, simplesmente inclui-se o sentido inverso das condições presentes nas cláusulas acima, ao invés de excluir a negação delas.
+
+18. As seguintes cláusulas WHERE são logicamente equivalentes?
+`WHERE NOT (ACRES < 50 OR STATE = 'MA')`
+`WHERE NOT ACRES < 50 OR NOT STATE = 'MA'`
+`WHERE NOT ACRES < 50 AND NOT STATE = 'MA'`
+
+R: A primeira e a segunda cláusula têm equivalência devido à distribuição do `NOT`, que tem prioridade na execução. Já a última delas, une as condições através de uma intersecção com o operador `AND`, e portanto, é distinta das demais. Logo, somente as duas primeiras cláusulas são logicamente equivalentes.
+
+```{r}
+Sys.setenv(TZ = "America/Sao_Paulo")
+Sys.time()
+```
