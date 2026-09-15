@@ -1,0 +1,186 @@
+---
+title: "Lab05_Barbosa"
+format: html
+editor: visual
+---
+
+### Instruções
+
+#Parte 1:
+
+Crie uma função que:
+
+a.  Receba um valor de `TAIL_NUMBER` (por exemplo, `N431WN`);
+b.  Produza uma tabela (tidy) com todos os trajetos realizados pela aeronave (ordenadas por data e hora,
+contendo todas as colunas do arquivo `flights.csv.zip`);
+c. Produza um mapa que apresente todo o trajeto voado pela aeronave ao longo de todo o ano; o trajeto
+deve ser apresentado de maneira linear no tempo (i.e., segue a sequência do tempo, como no exemplo
+hipotético dado acima);
+d. O mapa deve ser decorado com estatísticas do seu interesse (por exemplo, velocidade média do vôo
+como espessura da linha que conecta os aeroportos envolvidos no trajeto);
+
+#Parte 2:
+
+a.  Seu código deve ser bem comentado;
+b. Os nomes das variáveis devem ser esclarecedores (por exemplo, x é um nome ruim);
+c. Seu código será avaliado por 5 de seus colegas;
+d. A parte de avaliação (descrita em c.) acontecerá na semana de 23 a 27 de setembro (com entrega
+obrigatória no dia 27);
+
+#Observações:
+
+1.  A função terá o argumento `tail_number` e arquivo;
+2.  O argumento `tail_number` será o código identificador do avião de interesse (por ex., `N431WN`);
+3.  O argumento `arquivo` será o nome do arquivo com caminho completo (por ex., `file.path("dados","flights.csv.zip")`);
+4.  A função se chamará `analisa_aeronave`;
+5.  O arquivo deve ser lido por partes;
+6.  O mapa deve utilizar as coordenadas exatas dos aeroportos envolvidos (presentes no arquivo `airports`);
+7.  A função deve retornar uma lista (nomeada) com dois valores: a tabela utilizada para o gráfico e o
+gráfico propriamente dito;
+8.  O Jupyter não será suficiente para a realização da tarefa; utilize o RStudio; o laboratório continuará
+disponível nos horários da aula;
+9.  O código deverá ser submetido via Moodle até o dia 23 de setembro, às 10 da manhã (em área exclusiva
+a ser disponibilizada oportunamente).
+
+```{r}
+library(tidyverse)
+library(leaflet)
+library(readr)
+library(lubridate)
+library(scales) # Necessário para rescale()
+
+analisa_aeronave <- function(tail_number, arquivo, arquivo_airports = "airports.csv") {
+  
+  # 1. Leitura dos dados de aeroportos
+  dados_aeroportos <- read_csv(
+    arquivo_airports, 
+    col_types = cols(
+      IATA_CODE = col_character(), 
+      LATITUDE = col_double(), 
+      LONGITUDE = col_double()
+    ),
+    show_col_types = FALSE
+  ) %>%
+    select(IATA_CODE, AIRPORT, LATITUDE, LONGITUDE)
+  
+  # 2. Leitura filtrada por partes (chunks) com tipos explícitos
+  voos_filtrados <- read_csv_chunked(
+    file = arquivo,
+    callback = DataFrameCallback$new(function(chunk, index) {
+      chunk %>% filter(TAIL_NUMBER == !!tail_number)
+    }),
+    chunk_size = 100000,
+    col_types = cols(
+      YEAR = col_double(),
+      MONTH = col_double(),
+      DAY = col_double(),
+      SCHEDULED_DEPARTURE = col_double(),
+      TAIL_NUMBER = col_character(),
+      ORIGIN_AIRPORT = col_character(),
+      DESTINATION_AIRPORT = col_character(),
+      DISTANCE = col_double(),
+      AIR_TIME = col_double()
+    ),
+    show_col_types = FALSE
+  )
+  
+  if (nrow(voos_filtrados) == 0) {
+    stop("Nenhum registro encontrado para o TAIL_NUMBER fornecido.")
+  }
+
+  # 3. Tratamento dos dados e estatísticas
+  tabela_trajetos <- voos_filtrados %>%
+    mutate(
+      horario_num = as.numeric(SCHEDULED_DEPARTURE),
+      data_hora_decolagem = make_datetime(
+        year = as.numeric(YEAR), 
+        month = as.numeric(MONTH), 
+        day = as.numeric(DAY), 
+        hour = horario_num %/% 100, 
+        min = horario_num %% 100
+      )
+    ) %>%
+    arrange(data_hora_decolagem) %>%
+    left_join(dados_aeroportos, by = c("ORIGIN_AIRPORT" = "IATA_CODE")) %>%
+    rename(lat_origem = LATITUDE, lon_origem = LONGITUDE, nome_origem = AIRPORT) %>%
+    left_join(dados_aeroportos, by = c("DESTINATION_AIRPORT" = "IATA_CODE")) %>%
+    rename(lat_destino = LATITUDE, lon_destino = LONGITUDE, nome_destino = AIRPORT) %>%
+    filter(!is.na(lat_origem) & !is.na(lon_origem) & !is.na(lat_destino) & !is.na(lon_destino)) %>%
+    mutate(
+      velocidade_media = ifelse(!is.na(AIR_TIME) & AIR_TIME > 0, (DISTANCE / AIR_TIME) * 60, NA_real_),
+      # rescale sem o argumento na.rm incompatível
+      espessura_linha = ifelse(
+        is.na(velocidade_media), 
+        2, 
+        scales::rescale(velocidade_media, to = c(1, 6))
+      )
+    )
+
+  # 4. Construção do Mapa
+  mapa_trajetos <- leaflet() %>%
+    addTiles()
+
+  for (i in seq_len(nrow(tabela_trajetos))) {
+    voo <- tabela_trajetos[i, ]
+    
+    pop_info <- paste0(
+      "<b>Data:</b> ", voo$YEAR, "-", voo$MONTH, "-", voo$DAY, "<br>",
+      "<b>Origem:</b> ", voo$ORIGIN_AIRPORT, "<br>",
+      "<b>Destino:</b> ", voo$DESTINATION_AIRPORT, "<br>",
+      "<b>Velocidade Média:</b> ", ifelse(is.na(voo$velocidade_media), "N/A", round(voo$velocidade_media, 1)), " mph"
+    )
+
+    mapa_trajetos <- mapa_trajetos %>%
+      addPolylines(
+        lng = c(voo$lon_origem, voo$lon_destino),
+        lat = c(voo$lat_origem, voo$lat_destino),
+        weight = voo$espessura_linha,
+        opacity = 0.7,
+        color = "blue",
+        popup = pop_info
+      )
+  }
+
+  aeroportos_visitados <- bind_rows(
+    tabela_trajetos %>% select(IATA = ORIGIN_AIRPORT, lat = lat_origem, lon = lon_origem, nome = nome_origem),
+    tabela_trajetos %>% select(IATA = DESTINATION_AIRPORT, lat = lat_destino, lon = lon_destino, nome = nome_destino)
+  ) %>% distinct(IATA, .keep_all = TRUE)
+
+  mapa_trajetos <- mapa_trajetos %>%
+    addCircleMarkers(
+      data = aeroportos_visitados,
+      lng = ~lon,
+      lat = ~lat,
+      radius = 4,
+      color = "red",
+      fillOpacity = 0.8,
+      popup = ~paste0("<b>", IATA, "</b> - ", nome)
+    )
+
+  return(list(
+    tabela = tabela_trajetos,
+    mapa = mapa_trajetos
+  ))
+}
+```
+
+Exemplo de Uso:
+
+```{r}
+#| message: false
+#| warning: false
+
+resultado <- analisa_aeronave(
+  tail_number = "N431WN", 
+  arquivo = "flights.csv", 
+  arquivo_airports = "airports.csv"
+)
+
+# Renderiza o mapa (o Quarto usará webshot2 para converter em imagem no PDF)
+resultado$mapa
+```
+
+```{r}
+Sys.setenv(TZ = "America/Sao_Paulo")
+Sys.time()
+```
