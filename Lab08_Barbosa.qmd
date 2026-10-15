@@ -1,0 +1,85 @@
+---
+title: "Lab07_Barbosa"
+author: "Danilo Dias Correia Barbosa"
+format: pdf
+editor: visual
+---
+
+### Laboratório 2: Dados Relacionais com Polars
+
+Utilizando apenas operações por meio da biblioteca polars, responda:
+
+```{python}
+#| eval: false
+import polars as pl
+```
+
+1.  Quais são os 5 filmes com as maiores notas (averageRating)? Apresente uma solução capaz de desempatar os filmes baseando-se no número de votos recebidos.
+
+```{python}
+#| eval: false
+#| echo: true
+ratings = pl.scan_csv("title.ratings.tsv.gz", separator="\t", null_values="\\N")
+basics = pl.scan_csv("title.basics0.tsv.gz", separator="\t", null_values="\\N")
+
+top_filmes = (
+    ratings
+    .sort(by=["averageRating", "numVotes"], descending=[True, True])
+    .join(basics, on="tconst", how="inner")
+    .select(["primaryTitle", "averageRating", "numVotes"])
+    .head(5)
+    .collect()
+)
+
+print(top_filmes)
+```
+
+2.  Qual é o gênero mais frequente entre os filmes com nota maior que 8?
+
+```{python}
+#| eval: false
+#| echo: true
+genero_frequente = (
+    ratings
+    .filter(pl.col("averageRating") > 8.0)
+    .join(basics, on="tconst", how="inner")
+    .filter(pl.col("genres").is_not_null())
+    .select(pl.col("genres").str.split(","))
+    .explode("genres")
+    .group_by("genres")
+    .len()
+    .sort("len", descending=True)
+    .head(1)
+    .collect()
+)
+
+print(genero_frequente)
+```
+
+3.  Quais são os 3 atores/atrizes que mais participaram de filmes com nota maior que 7.5?
+
+```{python}
+#| eval: false
+#| echo: true
+principals = pl.scan_csv("title.principals0.tsv.gz", separator="\t", null_values="\\N")
+filmes_bons = ratings.filter(pl.col("averageRating") > 7.5).select("tconst")
+
+top_atores = (
+    principals
+    .filter(pl.col("category").is_in(["actor", "actress"]))
+    .select(["nconst", "tconst"])
+    .join(filmes_bons, on="tconst", how="inner")
+    .group_by("nconst")
+    .len()
+    .sort("len", descending=True)
+    .head(3)
+    .collect()
+)
+
+print(top_atores)
+```
+
+```{r}
+Sys.setenv(TZ = "America/Sao_Paulo")
+Sys.time()
+```
